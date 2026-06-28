@@ -1,0 +1,45 @@
+name: Build and push
+
+on:
+  push:
+    tags: ['*']
+
+env:
+  IMAGE: ghcr.io/kubernetools/mcp-server
+  MCP_VERSION: latest   # pin to a docgen release tag for reproducibility
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download mcp binary from docgen release
+        run: |
+          gh release download ${{ env.MCP_VERSION }} \
+            --repo kubernetools/docgen \
+            --pattern 'mcp-*-linux-x86_64' \
+            --output mcp
+          chmod +x mcp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build image
+        run: |
+          podman build \
+            --tag ${{ env.IMAGE }}:${{ github.ref_name }} \
+            --tag ${{ env.IMAGE }}:$(git rev-parse --short HEAD) \
+            --file Containerfile \
+            .
+
+      - name: Push image
+        run: |
+          podman push ${{ env.IMAGE }}:${{ github.ref_name }}
+          podman push ${{ env.IMAGE }}:$(git rev-parse --short HEAD)
